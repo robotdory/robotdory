@@ -1,0 +1,212 @@
+<div id="night-delivery-preview">
+<!-- Authors: robotdory(Taehyeon Kim) -->
+<style>
+body:has(> #night-delivery-preview) { margin: 0; background: #0d1117; color-scheme: dark; }
+#night-delivery-preview > svg { display: block; width: 100%; height: auto; }
+#night-delivery-preview.live .mission,
+#night-delivery-preview.live .loop { animation: none !important; }
+#night-delivery-preview .controls { display: flex; justify-content: flex-end; padding: 10px 14px 8px; }
+#night-delivery-preview .reroute {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 44px; padding: 0 17px; margin: 0;
+  color: #30270b; background: #ffda54;
+  border: 1px solid #ffe893; border-bottom: 3px solid #b78420; border-radius: 8px;
+  font: 650 14px/1.25 system-ui, "Noto Sans KR", sans-serif;
+  cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms, transform 120ms;
+}
+#night-delivery-preview .reroute[hidden] { display: none; }
+#night-delivery-preview .reroute > svg { width: 19px; height: 19px; flex: none; }
+#night-delivery-preview .reroute:focus-visible { outline: 2px solid #67ece8; outline-offset: 3px; }
+@media (hover: hover) {
+  #night-delivery-preview .reroute:hover { background: #ffe780; }
+}
+#night-delivery-preview .reroute:active { background: #f5c640; transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  #night-delivery-preview .reroute { transition: none; }
+  #night-delivery-preview .reroute:active { transform: none; }
+}
+</style>
+<!-- calendar:start -->
+<!-- calendar:end -->
+<div class="controls">
+  <button class="reroute" type="button" lang="ko" hidden>
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      <path d="M2.5 5h2c4 0 5.5 10 9.5 10h3m-3-3 3 3-3 3M2.5 15h2c1.5 0 2.6-1.4 3.5-3.1M11.7 7.5C12.5 6 13.4 5 15 5h2m-3-3 3 3-3 3"/>
+    </svg>
+    다른 배송 뽑기
+  </button>
+</div>
+</div>
+<script>
+(() => {
+  const root = document.getElementById('night-delivery-preview');
+  const svg = root.querySelector('svg');
+  const mission = svg.querySelector('[data-mission].moving');
+  if (!mission) return;
+
+  const forward = mission.querySelector('.forward');
+  const back = mission.querySelector('.back');
+  const robot = mission.querySelector('.robot');
+  const heading = mission.querySelector('.heading');
+  const destination = mission.querySelector('.delivered').parentNode;
+  const cargo = mission.querySelector('.cargo');
+  const delivered = mission.querySelector('.delivered');
+  const labels = [...mission.querySelectorAll('.status')];
+  const button = root.querySelector('button');
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const first = forward.points.getItem(0);
+  const second = forward.points.getItem(1);
+  const pitch = Math.abs(second.x-first.x) + Math.abs(second.y-first.y);
+  const half = svg.querySelector('#terrain-0 rect').width.baseVal.value / 2;
+  const key = (x, y) => x + ',' + y;
+  const cells = new Map();
+  for (const tile of svg.querySelectorAll(':scope > use, .terrain > use')) {
+    const level = Number(tile.href.baseVal.split('-').pop());
+    if (level > 2) continue;
+    const x = tile.x.baseVal.value + half;
+    const y = tile.y.baseVal.value + half;
+    cells.set(key(x, y), {x, y, cost: 4 + level});
+  }
+  const dock = cells.get(key(first.x, first.y));
+  if (!dock) return;
+  for (const cell of cells.values()) {
+    cell.neighbors = [[pitch,0], [0,pitch], [-pitch,0], [0,-pitch]]
+      .map(([dx,dy]) => cells.get(key(cell.x+dx,cell.y+dy))).filter(Boolean);
+  }
+  const district = new Set([dock]);
+  for (const cell of district) {
+    for (const neighbor of cell.neighbors) district.add(neighbor);
+  }
+  if (district.size < 3) return;
+
+  root.classList.add('live');
+  for (const overlay of root.querySelectorAll('[data-mission]')) {
+    overlay.style.display = overlay === mission ? 'inline' : 'none';
+  }
+  mission.style.opacity = '1';
+
+  const distance = (a,b) => (Math.abs(a.x-b.x) + Math.abs(a.y-b.y)) / pitch;
+  function route(start, goal, used = new Set()) {
+    const dx = goal.x - start.x;
+    const dy = goal.y - start.y;
+    const span = Math.max(Math.abs(dx), Math.abs(dy), pitch);
+    const open = new Set([start]);
+    const parent = new Map();
+    const cost = new Map([[start, 0]]);
+    const score = cell => cost.get(cell) + 4 * distance(cell, goal);
+    while (open.size) {
+      let current;
+      for (const cell of open) {
+        if (!current || score(cell) < score(current)) current = cell;
+      }
+      if (current === goal) {
+        const path = [];
+        for (let cell = goal; cell; cell = parent.get(cell)) path.push(cell);
+        return path.reverse();
+      }
+      open.delete(current);
+      for (const next of current.neighbors) {
+        const offset = Math.floor(Math.abs(dx*(next.y-start.y) - dy*(next.x-start.x)) / (span*pitch));
+        const step = cost.get(current) + next.cost + offset + (used.has(next) ? 2 : 0);
+        if (step >= (cost.get(next) ?? Infinity)) continue;
+        parent.set(next, current);
+        cost.set(next, step);
+        open.add(next);
+      }
+    }
+    throw new Error('Disconnected delivery route');
+  }
+
+  let goal;
+  let pose = {x:dock.x, y:dock.y, next:dock, angle:0};
+  let legs = [];
+  let startTime = 0;
+  let frame;
+  let phase;
+  const points = path => path.map(cell => key(cell.x, cell.y)).join(' ');
+
+  function setPhase(next) {
+    if (next === phase) return;
+    phase = next;
+    for (const label of labels) label.style.opacity = label.classList.contains(phase) ? '1' : '0';
+    forward.style.opacity = ['charging', 'go', 'handoff'].includes(phase) ? '1' : '0';
+    back.style.opacity = ['returning','docking'].includes(phase) ? '1' : '0';
+    cargo.style.opacity = ['charging','go'].includes(phase) ? '1' : '0';
+    delivered.style.opacity = ['handoff','returning','docking'].includes(phase) ? '1' : '0';
+  }
+
+  function tick(now) {
+    const elapsed = Math.max(0, now - startTime);
+    const leg = legs.find(segment => elapsed < segment.end);
+    if (!leg) {
+      pose = {...pose, x:dock.x, y:dock.y, next:dock};
+      robot.setAttribute('transform', 'translate(' + dock.x + ' ' + dock.y + ')');
+      dispatch();
+      return;
+    }
+    const t = (elapsed - leg.start) / (leg.end - leg.start);
+    pose = {x:leg.from.x + (leg.to.x-leg.from.x)*t,
+            y:leg.from.y + (leg.to.y-leg.from.y)*t, next:leg.to, angle:leg.angle};
+    robot.setAttribute('transform', 'translate(' + pose.x + ' ' + pose.y + ')');
+    heading.setAttribute('transform', 'rotate(' + pose.angle + ')');
+    setPhase(leg.phase);
+    if (!reduced.matches) frame = requestAnimationFrame(tick);
+  }
+
+  function dispatch() {
+    cancelAnimationFrame(frame);
+    const atCenter = cells.get(key(pose.x, pose.y));
+    const anchor = atCenter || pose.next;
+    const options = [...district].filter(cell => cell !== anchor && cell !== dock && cell !== goal);
+    if (!options.length) {
+      if (!reduced.matches && legs.length) frame = requestAnimationFrame(tick);
+      return;
+    }
+    const near = options.filter(cell => distance(anchor,cell) >= 6 &&
+      distance(anchor,cell) <= 19 && Math.abs(anchor.y-cell.y) >= 2*pitch);
+    const choices = near.length ? near : options;
+    goal = choices[Math.floor(Math.random()*choices.length)];
+    const out = route(anchor, goal);
+    const home = route(goal, dock, new Set(out));
+    const from = {x:pose.x, y:pose.y};
+    const path = atCenter ? out : [from, ...out];
+    forward.setAttribute('points', points(path));
+    back.setAttribute('points', points(home));
+    destination.setAttribute('transform', 'translate(' + goal.x + ' ' + goal.y + ')');
+
+    let angle = pose.angle;
+    let time = 0;
+    legs = [];
+    function segment(a, b, duration, status, facing = angle) {
+      legs.push({from:a, to:b, start:time, end:time+duration, phase:status, angle:facing});
+      angle = facing;
+      time += duration;
+    }
+    function drive(path, duration, status, reverse = false) {
+      const weights = path.slice(1).map((cell,i) => cell.cost * distance(path[i],cell));
+      const total = weights.reduce((sum,w) => sum+w,0);
+      weights.forEach((w,i) => {
+        const a = path[i], b = path[i+1];
+        let facing = Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI + (reverse ? 180 : 0);
+        if (i === 0 && a === from) facing = pose.angle;
+        segment(a, b, duration*w/total, status, facing);
+      });
+    }
+    if (atCenter === dock) segment(dock,dock,650,'charging');
+    drive(path, 8900, 'go');
+    segment(goal, goal, 1800, 'handoff');
+    drive(home.slice(0,-1), 7900, 'returning');
+    drive(home.slice(-2), 1100, 'docking', true);
+    segment(dock, dock, 3650, 'charging');
+    startTime = performance.now();
+    tick(startTime);
+  }
+
+  button.hidden = false;
+  button.addEventListener('click', dispatch);
+  reduced.addEventListener('change', dispatch);
+  dispatch();
+})();
+</script>

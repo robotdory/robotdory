@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- Authors: robotdory(Taehyeon Kim) -->
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GAEMI DELIVERY | robotdory</title>
+  <style>
+    :root { color-scheme: dark; background: #10151c; color: #e6edf3; font: 16px/1.55 system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; display: grid; align-content: center; padding: clamp(14px, 6vw, 80px); }
+    main { width: min(100%, 1060px); margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+    h1 { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 650; }
+    a { color: #a9bac9; font-size: 14px; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+    a:hover { color: #ffda54; }
+    a:focus-visible { outline: 2px solid #67ece8; outline-offset: 3px; }
+    section { container-type: inline-size; overflow: hidden; border: 1px solid #34404d; border-radius: 12px; background: #0d1117; }
+    iframe { display: block; width: 100%; height: calc(23.38cqw + 68px); border: 0; }
+    p { margin: 16px 0 0; color: #b1beca; font-size: 14px; word-break: keep-all; }
+    ::selection { background: #ffda54; color: #30270b; }
+    @media (max-width: 540px) {
+      body { align-content: start; padding-top: 32px; }
+      header { margin-bottom: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>GAEMI DELIVERY</h1>
+      <a href="https://github.com/robotdory">robotdory</a>
+    </header>
+    <section aria-label="배송 지도">
+      <iframe src="inline/night-delivery.html" title="다른 배송을 뽑을 수 있는 야간 배송 지도"></iframe>
+    </section>
+    <p>잔디 한 칸은 하루입니다. 로봇은 평평한 칸을 달리고, 빗금이 많은 칸에서는 속도를 줄이며, 솟은 블록은 돌아갑니다.</p>
+  </main>
+</body>
+</html>
